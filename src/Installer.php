@@ -6,6 +6,7 @@ use Composer\Composer;
 use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\DependencyResolver\Operation\UninstallOperation;
 use Composer\DependencyResolver\Operation\UpdateOperation;
+use Composer\InstalledVersions;
 use Composer\Installer\PackageEvent;
 use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
@@ -50,7 +51,6 @@ class Installer {
     'index.php',
     'core/install.php',
     'core/rebuild.php',
-    'core/modules/statistics/statistics.php',
   ];
 
   /**
@@ -108,6 +108,8 @@ class Installer {
 
     $this->setAssetFileTypes();
 
+    $this->getStatisticsPath();
+
     $this->excludes = $this->getConfig('excludes', []);
   }
 
@@ -125,7 +127,7 @@ class Installer {
   public function getConfig($name, $default = NULL) {
     $extra = $this->composer->getPackage()->getExtra();
 
-    // TODO: Backward compatibility for old configs. Remove on stable version.
+    // @todo Backward compatibility for old configs. Remove on stable version.
     $legacyConfigs = [
       'drupal-app-dir',
       'drupal-web-dir',
@@ -368,7 +370,7 @@ class Installer {
   }
 
   /**
-   * Create a PHP stub file at web directory.
+   * Create a PHP stub file at we directory.
    *
    * @param string $path
    *   The PHP file from the app directory.
@@ -432,6 +434,67 @@ EOF;
     $event = new AssetFileTypesEvent($this->assetFileTypes, $this->composer, $this->io);
     $this->composer->getEventDispatcher()->dispatch($event->getName(), $event);
     $this->assetFileTypes = $event->getAssetFileTypes();
+  }
+
+  /**
+   * Get the path to the Composer root directory.
+   */
+  public function getComposerRoot(): string|false {
+    foreach (InstalledVersions::getAllRawData() as $data) {
+      if (isset($data['versions']['drupal/core'])) {
+        return realpath($data['root']['install_path']);
+      }
+    }
+    $root = InstalledVersions::getRootPackage();
+    return realpath($root['install_path']);
+  }
+
+  /**
+   * Return module path from appDir.
+   *
+   * @param string $module
+   *   The PHP file from the app directory.
+   *
+   * @return string|null
+   *   Module Path.
+   */
+  protected function getModulePath(string $module): ?string {
+    $composerRoot = $this->getComposerRoot();
+    $extra = $this->composer->getPackage()->getExtra();
+    $fs = new SymfonyFilesystem();
+    $installerPaths = $extra['installer-paths'];
+    $searchType = 'type:drupal-module';
+    $modulePath = NULL;
+
+    foreach ($installerPaths as $key => $types) {
+      if (in_array($searchType, $types, TRUE)) {
+        $modulePath = (string) str_replace('{$name}', $module, $key);
+        break;
+      }
+    }
+    if (!$fs->exists($composerRoot . '/' . $modulePath) || !$modulePath) {
+      return NULL;
+    }
+
+    $moduleBasePath = str_replace($this->appDir . '/', '', $modulePath);
+    return $moduleBasePath;
+  }
+
+  /**
+   * Get path of Statistics module.
+   */
+  protected function getStatisticsPath(): void {
+    $composerRoot = $this->getComposerRoot();
+    $fs = new SymfonyFilesystem();
+    $statisticsPath = $this->getModulePath('statistics');
+    $statisticsCorePath = 'core/modules/statistics/statistics.php';
+
+    if ($fs->exists($composerRoot . '/' . $this->appDir . '/' . $statisticsCorePath)) {
+      array_push($this->frontControllers, $statisticsCorePath);
+    }
+    elseif ($statisticsPath) {
+      array_push($this->frontControllers, $statisticsPath . '/statistics.php');
+    }
   }
 
 }
