@@ -370,7 +370,7 @@ class Installer {
   }
 
   /**
-   * Create a PHP stub file at we directory.
+   * Create a PHP stub file at web directory.
    *
    * @param string $path
    *   The PHP file from the app directory.
@@ -486,6 +486,10 @@ EOF;
   protected function getStatisticsPath(): void {
     $composerRoot = $this->getComposerRoot();
     $fs = new SymfonyFilesystem();
+    if (!$fs->exists($composerRoot)) {
+      $this->io->writeError('> drupal-paranoia: Composer root path not found.');
+      return;
+    }
     $statisticsPath = $this->getModulePath('statistics');
     $statisticsCorePath = 'core/modules/statistics/statistics.php';
 
